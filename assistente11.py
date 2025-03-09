@@ -8,10 +8,22 @@ import time
 import tkinter as tk
 import cv2
 import requests
-import serial
-import serial.tools.list_ports
 from threading import Thread
 from PIL import Image, ImageTk
+
+# Tentativa de importar serial - tratando possíveis erros
+try:
+    import serial
+    try:
+        import serial.tools.list_ports
+        SERIAL_TOOLS_AVAILABLE = True
+    except ImportError:
+        SERIAL_TOOLS_AVAILABLE = False
+        print("Módulo serial.tools não encontrado. Usando método alternativo.")
+except ImportError:
+    serial = None
+    SERIAL_TOOLS_AVAILABLE = False
+    print("Módulo serial não encontrado. Por favor, instale com 'pip install pyserial'")
 
 # Criando a interface gráfica
 root = tk.Tk()
@@ -122,16 +134,36 @@ def listen():
 
 def list_available_ports():
     """Lista todas as portas seriais disponíveis no sistema"""
-    ports = serial.tools.list_ports.comports()
+    if not serial:
+        return []
+        
     available_ports = []
-    
     port_info = "Portas disponíveis:\n"
-    if not ports:
-        port_info += "  Nenhuma porta serial detectada"
+    
+    if SERIAL_TOOLS_AVAILABLE:
+        # Método usando serial.tools.list_ports
+        ports = serial.tools.list_ports.comports()
+        if not ports:
+            port_info += "  Nenhuma porta serial detectada"
+        else:
+            for port in ports:
+                port_info += f"  {port.device} - {port.description}\n"
+                available_ports.append(port.device)
     else:
-        for port in ports:
-            port_info += f"  {port.device} - {port.description}\n"
-            available_ports.append(port.device)
+        # Método alternativo para Windows
+        # Tenta as portas COM mais comuns
+        for i in range(1, 20):
+            port = f"COM{i}"
+            try:
+                s = serial.Serial(port)
+                s.close()
+                port_info += f"  {port}\n"
+                available_ports.append(port)
+            except:
+                pass
+                
+        if not available_ports:
+            port_info += "  Nenhuma porta serial detectada"
     
     instrucao_label.config(text=port_info)
     root.update()
@@ -140,6 +172,10 @@ def list_available_ports():
 def connect_to_serial():
     """Tenta conectar à primeira porta serial disponível"""
     global serial_port
+    
+    if not serial:
+        instrucao_label.config(text="Módulo serial não disponível. Instale com 'pip install pyserial'")
+        return False
     
     available_ports = list_available_ports()
     if not available_ports:
@@ -152,7 +188,7 @@ def connect_to_serial():
             serial_port = serial.Serial(port, 9600, timeout=1)
             instrucao_label.config(text=f"Conectado à porta {port} com sucesso!\nMonitorando sinais do Arduino...")
             return True
-        except serial.serialutil.SerialException as e:
+        except Exception as e:
             continue
     
     instrucao_label.config(text="Não foi possível conectar a nenhuma porta serial. Verifique as permissões.")
@@ -161,6 +197,10 @@ def connect_to_serial():
 def monitor_serial():
     """Monitora a porta serial em busca do sinal LED_ON"""
     global serial_port
+    
+    if not serial:
+        instrucao_label.config(text="Módulo serial não disponível. Instale com 'pip install pyserial'")
+        return
     
     if not connect_to_serial():
         return
@@ -186,17 +226,25 @@ def monitor_serial():
             serial_port.close()
 
 # Criando rótulo para instruções
-instrucao_label = tk.Label(root, text="Iniciando monitoramento da porta serial...", font=("Arial", 12))
+instrucao_label = tk.Label(root, wraplength=500, text="Iniciando aplicação...", font=("Arial", 12))
 instrucao_label.pack(pady=20)
 
-# Inicia o monitoramento serial em thread separada para não bloquear a interface
-serial_thread = Thread(target=monitor_serial, daemon=True)
-serial_thread.start()
-
-# Botão para reconectar manualmente caso necessário
-botao_reconectar = tk.Button(root, text="Reconectar Serial", font=("Arial", 14), 
-                             command=lambda: Thread(target=monitor_serial, daemon=True).start())
-botao_reconectar.pack(pady=20)
+# Botões
+if serial:
+    # Se tiver o módulo serial, inicia monitoramento
+    instrucao_label.config(text="Iniciando monitoramento da porta serial...")
+    serial_thread = Thread(target=monitor_serial, daemon=True)
+    serial_thread.start()
+    
+    # Botão para reconectar
+    botao_reconectar = tk.Button(root, text="Reconectar Serial", font=("Arial", 14), 
+                               command=lambda: Thread(target=monitor_serial, daemon=True).start())
+    botao_reconectar.pack(pady=10)
+else:
+    # Se não tiver o módulo serial, mostra mensagem e botão manual
+    instrucao_label.config(text="Módulo Serial não instalado.\nPor favor, instale com 'pip install pyserial'.\nUsando modo manual.")
+    botao_iniciar = tk.Button(root, text="Iniciar Conversa Manualmente", font=("Arial", 14), command=iniciar_conversa)
+    botao_iniciar.pack(pady=20)
 
 root.mainloop()
 
