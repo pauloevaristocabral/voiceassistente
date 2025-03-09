@@ -11,6 +11,12 @@ import requests
 from threading import Thread
 from PIL import Image, ImageTk
 
+# === CONFIGURAÇÃO DA PORTA SERIAL ===
+# Altere esta variável para definir qual porta COM usar
+# Exemplo: "COM3", "COM4", etc.
+# Deixe como None para detecção automática
+PORTA_COM = "COM3"  # <-- ALTERE AQUI PARA SUA PORTA
+
 # Tentativa de importar serial - tratando possíveis erros
 try:
     import serial
@@ -170,13 +176,24 @@ def list_available_ports():
     return available_ports
 
 def connect_to_serial():
-    """Tenta conectar à primeira porta serial disponível"""
+    """Tenta conectar à porta serial especificada ou à primeira disponível"""
     global serial_port
     
     if not serial:
         instrucao_label.config(text="Módulo serial não disponível. Instale com 'pip install pyserial'")
         return False
     
+    # Se a porta COM foi especificada no início do código
+    if PORTA_COM:
+        try:
+            serial_port = serial.Serial(PORTA_COM, 9600, timeout=1)
+            instrucao_label.config(text=f"Conectado à porta {PORTA_COM} com sucesso!\nMonitorando sinais do Arduino...")
+            return True
+        except Exception as e:
+            instrucao_label.config(text=f"Erro ao conectar à porta {PORTA_COM}: {str(e)}\nTentando outras portas...")
+            # Se falhar, continua com a detecção automática
+    
+    # Detecção automática de portas
     available_ports = list_available_ports()
     if not available_ports:
         instrucao_label.config(text="Nenhuma porta serial disponível. Verifique se o Arduino está conectado.")
@@ -206,6 +223,7 @@ def monitor_serial():
         return
     
     try:
+        instrucao_label.config(text=f"Monitorando porta {serial_port.port} por sinais do sensor...")
         while True:
             if serial_port and serial_port.is_open and serial_port.in_waiting > 0:
                 line = serial_port.readline().decode('utf-8', errors='replace').strip()
@@ -220,7 +238,7 @@ def monitor_serial():
             root.update()  # Mantém a interface responsiva
             
     except Exception as e:
-        instrucao_label.config(text=f"Erro: {str(e)}")
+        instrucao_label.config(text=f"Erro no monitoramento: {str(e)}")
     finally:
         if serial_port and serial_port.is_open:
             serial_port.close()
@@ -228,6 +246,11 @@ def monitor_serial():
 # Criando rótulo para instruções
 instrucao_label = tk.Label(root, wraplength=500, text="Iniciando aplicação...", font=("Arial", 12))
 instrucao_label.pack(pady=20)
+
+# Status da porta configurada
+if PORTA_COM:
+    porta_configurada_label = tk.Label(root, text=f"Porta configurada: {PORTA_COM}", font=("Arial", 10))
+    porta_configurada_label.pack(pady=5)
 
 # Botões
 if serial:
@@ -240,6 +263,10 @@ if serial:
     botao_reconectar = tk.Button(root, text="Reconectar Serial", font=("Arial", 14), 
                                command=lambda: Thread(target=monitor_serial, daemon=True).start())
     botao_reconectar.pack(pady=10)
+    
+    # Botão para conversa manual
+    botao_manual = tk.Button(root, text="Iniciar Conversa Manualmente", font=("Arial", 14), command=iniciar_conversa)
+    botao_manual.pack(pady=10)
 else:
     # Se não tiver o módulo serial, mostra mensagem e botão manual
     instrucao_label.config(text="Módulo Serial não instalado.\nPor favor, instale com 'pip install pyserial'.\nUsando modo manual.")
